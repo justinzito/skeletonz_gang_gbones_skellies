@@ -61,15 +61,9 @@ contract Skeletonz_GBONEs is ERC20, ReentrancyGuard, AccessControl {
     }
 
     //--------------- WRITE FUNCTIONS
-    function claimGbones() external nonReentrant {
-       
-            claimGenesisGbones();
-            claimMutantGbones();
-    }
+    
+    function claimGenesisGbones(uint[] memory tokens) public nonReentrant {
 
-    function claimGenesisGbones() public nonReentrant {
-
-        uint[] memory tokens = getGenesisIDsByOwner(msg.sender);
         uint256 totalClaimDelta = 0;
 
         uint64 claimTimestamp = uint64(block.timestamp);
@@ -82,9 +76,8 @@ contract Skeletonz_GBONEs is ERC20, ReentrancyGuard, AccessControl {
         _mint(msg.sender,totalClaimDelta * _genesisRate);
     }
 
-    function claimMutantGbones() public nonReentrant {
+    function claimMutantGbones(uint[] memory tokens) public nonReentrant {
 
-        uint[] memory tokens = getSkellieIDsByOwner(msg.sender);
         uint256 totalClaimDelta = 0;
         uint64 claimTimestamp = uint64(block.timestamp);
         Skellies_Contract source_data = Skellies_Contract(_skellieContract);
