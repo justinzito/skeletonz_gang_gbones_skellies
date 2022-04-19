@@ -72,7 +72,7 @@ contract Skeletonz_GBONEs is ERC20, ReentrancyGuard, AccessControl {
         uint64 claimTimestamp = uint64(block.timestamp);
 
         for (uint64 i=0; i<tokens.length;i++) {
-            if (source_data.ownerOf(i) == msg.sender) {
+            if (source_data.ownerOf(tokens[i]) == msg.sender) {
                 totalClaimDelta += (claimTimestamp - getClaimTimeForGenesisToken(tokens[i]));
                 _genesis_claimTimestamp[tokens[i]] = claimTimestamp;
             }
@@ -88,7 +88,7 @@ contract Skeletonz_GBONEs is ERC20, ReentrancyGuard, AccessControl {
         Skellies_Contract source_data = Skellies_Contract(_skellieContract);
 
         for (uint64 i=0; i<tokens.length;i++) {
-            if (source_data.ownerOf(i) == msg.sender && source_data.isMutantToken(tokens[i])) {
+            if (source_data.ownerOf(tokens[i]) == msg.sender && source_data.isMutantToken(tokens[i])) {
                 totalClaimDelta += (claimTimestamp - getClaimTimeForSkellieToken(tokens[i]));
                 _mutant_claimTimestamp[tokens[i]] = claimTimestamp;
             }
