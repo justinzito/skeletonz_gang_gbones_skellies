@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: MIT
 
+/*
+                                                                                                                                    
+      _/_/_/  _/                  _/              _/                                          _/_/_/                                
+   _/        _/  _/      _/_/    _/    _/_/    _/_/_/_/    _/_/    _/_/_/    _/_/_/_/      _/          _/_/_/  _/_/_/      _/_/_/   
+    _/_/    _/_/      _/_/_/_/  _/  _/_/_/_/    _/      _/    _/  _/    _/      _/        _/  _/_/  _/    _/  _/    _/  _/    _/    
+       _/  _/  _/    _/        _/  _/          _/      _/    _/  _/    _/    _/          _/    _/  _/    _/  _/    _/  _/    _/     
+_/_/_/    _/    _/    _/_/_/  _/    _/_/_/      _/_/    _/_/    _/    _/  _/_/_/_/        _/_/_/    _/_/_/  _/    _/    _/_/_/      
+                                                                                                                           _/       
+                                                                                                                      _/_/          
+*/
+
 pragma solidity ^0.8.4;
 
 import "hardhat/console.sol";
@@ -161,7 +172,6 @@ contract ERC721A is Context, ERC165, IERC721, IERC721Metadata {
         _addressData[owner].aux = aux;
     }
 
-
     /**
      * Gas spent here starts off proportional to the maximum mint batch size.
      * It gradually moves to O(1) as tokens get transferred around in the collection over time.
@@ -198,13 +208,6 @@ contract ERC721A is Context, ERC165, IERC721, IERC721Metadata {
      */
     function ownerOf(uint256 tokenId) public view override returns (address) {
         return ownershipOf(tokenId).addr;
-    }
-
-    /**
-     * ZITO added this method to access ownership timestamp
-     */
-    function timestampOf(uint256 tokenId) public view returns (uint64) {
-        return ownershipOf(tokenId).startTimestamp;
     }
 
     /**
@@ -727,83 +730,127 @@ abstract contract ReentrancyGuard {
     }
 }
 
-
 abstract contract GBones_Contract {
    function balanceOf(address owner) virtual public view returns(uint);
    function burnGbones(address account, uint256 amount) virtual external;
 }
 
 abstract contract Skeletonz_Contract {
-   function balanceOf(address owner) virtual public view returns(uint);
-   function totalSupply() virtual public view returns(uint);
    function ownerOf(uint tokenId) virtual public view returns(address);
 }
 
 contract Skellies is ERC721A, ReentrancyGuard, Ownable {
 	
-	uint public constant maxSkellies = 4500;
-    uint public constant maxMutants = 250;
+    uint256 public constant maxSkellies = 4500;
+    uint256 public constant maxMutants = 250;
 
-    uint public skelliesMinted = 0;
-    uint public mutantsMinted = 0;
+    uint256 public skelliesMinted = 0;
+    uint256 public mutantsMinted = 0;
     uint256 public breedCost = 900 ether;
     uint256 private randomNonce = 4500;
-    
-    mapping(uint256 => bool) private _isMutantToken; 
 
-	
+    mapping(uint256 => bool) private _isMutantToken;
+
+    uint public baseTokenSequential = 0;
+    mapping(uint256 => uint256) private _baseTokenIDs;
+    mapping(uint256 => uint256) private _mutantTokenIDs;
+
+    uint256 public cooldown = 600; // time in seconds
+
+    address genesisContractAddress;
+    address gBonesContractAddress;
+
+    // Mapping for skeletonz and their cooldowns
+    mapping(uint256 => uint256) private _cooldowns;
+
 	string internal baseTokenURI;
+    string internal mutantTokenURI;
 	string baseTokenURI_extension = ".json";
 
-    address _gBonesContractAddress;
-    address _genesisContract;
-	
-	constructor(address gBonesContractAddress, address genesisContract) ERC721A("Skellies", "Skellie") Ownable() {
-        _gBonesContractAddress = gBonesContractAddress;
-        _genesisContract = genesisContract;
-        
-	}
-
-    //------- WRITE FUNCTIONS
-
-    function setGBonesContract(address gBonesContractAddress) external onlyOwner {
-        _gBonesContractAddress = gBonesContractAddress;
+    modifier noContracts {
+        require(msg.sender == tx.origin, "No smart contracts!");
+        _;
     }
 	
+	constructor(address _genesisContractAddress, address _gbonesContractAddress) ERC721A("Skellies", "Skellie") Ownable() {
+
+        genesisContractAddress = _genesisContractAddress;
+        gBonesContractAddress = _gbonesContractAddress;
+
+    }
+
+    function setGBonesContract(address _gBonesContractAddress) external onlyOwner {
+        gBonesContractAddress = _gBonesContractAddress;
+    }
+
 	function setBaseTokenURI(string memory _uri) external onlyOwner {
         baseTokenURI = _uri;
+    }
+
+    function setMutantTokenURI(string memory _uri) external onlyOwner {
+        mutantTokenURI = _uri;
     }
 	
 	function setBaseTokenURI_extension(string memory _ext) external onlyOwner {
         baseTokenURI_extension = _ext;
     }
 
-    function breedSkellie() external nonReentrant {
-
-        require(skelliesMinted < maxSkellies, "Mint over the max tokens limit"); 
-        require(
-            Skeletonz_Contract(_genesisContract).balanceOf(msg.sender) > 1,
-            "You must own at least two genesis"
-        );
-
-        GBones_Contract gBonesContract = GBones_Contract(_gBonesContractAddress);
-        gBonesContract.burnGbones(msg.sender, breedCost);
-
-        
-        if (shouldMintMutant()) {
-            mutantsMinted += 1;
-            _isMutantToken[skelliesMinted] = true;
-        }
-
-        skelliesMinted += 1;
-        _safeMint(_msgSender(), 1);
-
+    function setCooldown(uint256 _seconds) external onlyOwner {
+        cooldown = _seconds;
     }
 
-     //------- READ FUNCTIONS
-	function tokenURI(uint tokenId_) public view override returns (string memory) {
-        require(_exists(tokenId_), "Query for non-existent token!");
-        return string(abi.encodePacked(baseTokenURI, Strings.toString(tokenId_), baseTokenURI_extension));
+    function setCost(uint256 _breedCost) external onlyOwner {
+        breedCost = _breedCost;
+    }
+	
+	function tokenURI(uint256 _tokenId) public view override returns (string memory) {
+        require(_exists(_tokenId), "Query for non-existent token!");
+
+        if (_isMutantToken[_tokenId]) {
+            return string(abi.encodePacked(mutantTokenURI, Strings.toString(_mutantTokenIDs[_tokenId]), baseTokenURI_extension));
+        }
+        else {
+            return string(abi.encodePacked(baseTokenURI, Strings.toString(_baseTokenIDs[_tokenId]), baseTokenURI_extension));
+        }
+        
+    }
+
+	function mintSkellie(uint256[] memory skeletonz_IDs) public nonReentrant noContracts payable {
+
+        Skeletonz_Contract source_data = Skeletonz_Contract(genesisContractAddress);
+
+        for (uint64 i = 0; i < 2; i++) {
+            // Check cooldowns for skeletonz
+            require(_cooldowns[skeletonz_IDs[i]] + cooldown < block.timestamp, "Skeletonz in cooldown");
+
+            // Check ownership for used skeletonz
+            require(source_data.ownerOf(skeletonz_IDs[i]) == msg.sender, "Not your skeletonz");
+
+            // Set the new cooldown time
+            _cooldowns[skeletonz_IDs[i]] = block.timestamp;
+
+        }
+
+        require(skelliesMinted < maxSkellies, "Mint over the max tokens limit"); 
+
+        // Pay for the skellie with tokens
+        // gbonesContract.transferFrom(msg.sender, address(this), cost);
+        GBones_Contract gBonesContract = GBones_Contract(gBonesContractAddress);
+        gBonesContract.burnGbones(msg.sender, breedCost);
+
+        if (shouldMintMutant()) {
+            _mutantTokenIDs[skelliesMinted] = mutantsMinted;
+            mutantsMinted++;
+            _isMutantToken[skelliesMinted] = true;
+        }
+        else {
+            _baseTokenIDs[skelliesMinted] = baseTokenSequential;
+            baseTokenSequential++;
+        }
+
+        skelliesMinted++;
+        _safeMint(_msgSender(), 1);
+
     }
 
     function shouldMintMutant() private returns (bool) {
@@ -818,7 +865,7 @@ contract Skellies is ERC721A, ReentrancyGuard, Ownable {
         uint256 mutantsRemaining = (maxMutants - mutantsMinted) * 1000;
         uint256 probability = mutantsRemaining/skelliesRemaining;
         
-        uint randomVal = random();
+        uint256 randomVal = random();
 
         if (randomVal < probability) {
             result = true;
@@ -827,14 +874,12 @@ contract Skellies is ERC721A, ReentrancyGuard, Ownable {
             console.log("%s] prob %s, actual %s", skelliesMinted,probability, randomVal);
         }
 
-        
-
         return result;
     }
 
-    function random() private returns (uint) {
+    function random() private returns (uint256) {
 
-        uint newRandom = uint(keccak256(abi.encodePacked(
+        uint256 newRandom = uint256(keccak256(abi.encodePacked(
             block.timestamp,
             msg.sender,
             randomNonce,
@@ -845,11 +890,17 @@ contract Skellies is ERC721A, ReentrancyGuard, Ownable {
         return newRandom;
     }
 
-    function getMutantsMinted() public view returns(uint) {
+    function getMutantsMinted() public view returns(uint256) {
         return mutantsMinted;
+    }
+    
+    function getSkeletonCooldown(uint256 tokenId) public view returns(uint256) {
+        return _cooldowns[tokenId];
     }
 
     function isMutantToken(uint256 tokenId) public view returns(bool) {
         return _isMutantToken[tokenId];
     }
-} 
+
+  
+}
